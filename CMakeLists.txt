@@ -42,7 +42,7 @@ add_executable(picow_ble_temp_sensor
     )
 target_link_libraries(picow_ble_temp_sensor
     pico_stdlib
-    pico_btstack_ble
+    pico_btstack_classic  
     pico_btstack_cyw43
     pico_cyw43_arch_none
     hardware_adc
