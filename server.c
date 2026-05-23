@@ -19,6 +19,7 @@
 #include "pico/btstack_cyw43.h"
 #include "pico/stdlib.h"
 #include "pico/rand.h"
+#include "pico/stdio_usb.h"
 
 #include "type.h"   // ds4_data 構造体
 
@@ -30,11 +31,12 @@
 
 // SPPチャンネル番号（1〜30、衝突しない任意の値）
 #define SPP_RFCOMM_CHANNEL    1
+#define HCI_ENABLE_ROLE_SWITCH 0x0001
 
 // -------------------------------------------------------
 // SDP レコード用バッファ
 // -------------------------------------------------------
-static uint8_t spp_service_buffer[150];
+static uint8_t spp_service_buffer[512];
 
 // -------------------------------------------------------
 // グローバル変数
@@ -139,43 +141,61 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
         case HCI_EVENT_PACKET:
             switch (hci_event_packet_get_type(packet)) {
 
-                case BTSTACK_EVENT_STATE:
+                case BTSTACK_EVENT_STATE:{
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
                     gap_local_bd_addr(event_addr);
                     printf("[SPP] BTstack up on %s\n", bd_addr_to_str(event_addr));
+
+                    int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
+                    if (service_err != 0) {
+                        printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
+                    } else {
+                        printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
+                    }
                     // Discoverable & Connectable に設定
                     gap_discoverable_control(1);
                     gap_connectable_control(1);
                     printf("[SPP] Waiting for connection...\n");
                     break;
+                }
 
-                case HCI_EVENT_PIN_CODE_REQUEST:
+                case HCI_EVENT_PIN_CODE_REQUEST:{
                     // SSP非対応の相手のためにPINコードを返す（"0000"）
-                    printf("[SPP] PIN code request from %s\n",
-                           bd_addr_to_str(event_addr));
                     hci_event_pin_code_request_get_bd_addr(packet, event_addr);
+                    printf("[SPP] PIN code request from %s\n", bd_addr_to_str(event_addr));
                     gap_pin_code_response(event_addr, "0000");
                     break;
+                }
 
-                case HCI_EVENT_USER_CONFIRMATION_REQUEST:
+                case HCI_EVENT_USER_CONFIRMATION_REQUEST:{
                     // SSP: 数値比較を自動承認
                     hci_event_user_confirmation_request_get_bd_addr(packet, event_addr);
                     gap_ssp_confirmation_response(event_addr);
                     break;
+                }
 
-                case RFCOMM_EVENT_INCOMING_CONNECTION:
+                case RFCOMM_EVENT_INCOMING_CONNECTION:{
                     // クライアントからの接続要求
                     rfcomm_event_incoming_connection_get_bd_addr(packet, event_addr);
                     rfcomm_channel_nr = rfcomm_event_incoming_connection_get_server_channel(packet);
                     rfcomm_cid        = rfcomm_event_incoming_connection_get_rfcomm_cid(packet);
-                    printf("[SPP] Incoming from %s channel=%d cid=0x%04x\n",
+                    printf("[RFCOMM] Incoming connection from %s (requested_channel=%d, cid=0x%04x)\n",
                            bd_addr_to_str(event_addr), rfcomm_channel_nr, rfcomm_cid);
-                    rfcomm_accept_connection(rfcomm_cid);
+                    
+                    // 接続受け入れ
+                    int accept_result = rfcomm_accept_connection(rfcomm_cid);
+                    if (accept_result == 0) {
+                        printf("[RFCOMM] Accepting connection (cid=0x%04x)...\n", rfcomm_cid);
+                    } else {
+                        printf("[RFCOMM] WARNING: rfcomm_accept_connection returned error %d\n", accept_result);
+                        rfcomm_cid = 0;
+                    }
                     break;
+                }
 
-                case RFCOMM_EVENT_CHANNEL_OPENED:
+                case RFCOMM_EVENT_CHANNEL_OPENED:{
                     if (rfcomm_event_channel_opened_get_status(packet) != ERROR_CODE_SUCCESS) {
-                        printf("[SPP] Channel open failed: 0x%02x\n",
+                        printf("[RFCOMM] ERROR: Channel open failed: 0x%02x\n",
                                rfcomm_event_channel_opened_get_status(packet));
                         rfcomm_cid = 0;
                         break;
@@ -183,27 +203,42 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
                     rfcomm_cid = rfcomm_event_channel_opened_get_rfcomm_cid(packet);
                     connected  = true;
                     can_send   = true;
-                    printf("[SPP] Channel opened! cid=0x%04x mtu=%d\n",
+                    printf("[RFCOMM] ===== Channel opened! cid=0x%04x mtu=%d =====",
                            rfcomm_cid,
                            rfcomm_event_channel_opened_get_max_frame_size(packet));
+                    printf(" [DATA TX START]\n");
                     // 接続中は Discoverable を止めて不要な Inquiry 応答を減らす
                     gap_discoverable_control(0);
                     break;
+                }
 
-                case RFCOMM_EVENT_CAN_SEND_NOW:
+                case RFCOMM_EVENT_CAN_SEND_NOW:{
                     // バッファが空いたので次の heartbeat で送信できる
                     can_send = true;
                     break;
+                }
 
-                case RFCOMM_EVENT_CHANNEL_CLOSED:
-                    printf("[SPP] Channel closed\n");
+                case RFCOMM_EVENT_CHANNEL_CLOSED:{
+                    printf("[RFCOMM] Channel closed, returning to Discoverable mode\n");
                     rfcomm_cid = 0;
                     connected  = false;
                     can_send   = false;
                     // 再度 Discoverable にして次の接続を待つ
                     gap_discoverable_control(1);
                     break;
+                }
 
+                case HCI_EVENT_CONNECTION_COMPLETE:{
+                    uint8_t status = hci_event_connection_complete_get_status(packet);
+                    if (status != ERROR_CODE_SUCCESS) {
+                        printf("[HCI] Connection failed: 0x%02x\n", status);
+                        break;
+                    }
+                    hci_event_connection_complete_get_bd_addr(packet, event_addr);
+                    printf("[HCI] ACL Connection established from %s\n", 
+                    bd_addr_to_str(event_addr));
+                    break;
+                }
                 default:
                     break;
             }
@@ -227,42 +262,71 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
 int main(void) {
     stdio_init_all();
 
+    for (int i = 0; i < 30; i++) {
+        if (stdio_usb_connected()) break;
+        sleep_ms(100);
+    }
+
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
         return -1;
     }
 
-    // --- BTstack プロトコルスタック初期化 ---
-    l2cap_init();
-
-    // RFCOMM 初期化
-    rfcomm_init();
-    rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 0xFFFF);
-
-    // SDP 初期化 & SPP サービスレコード登録
-    sdp_init();
-    memset(spp_service_buffer, 0, sizeof(spp_service_buffer));
-    spp_create_sdp_record(spp_service_buffer, sdp_create_service_record_handle(),
-                          SPP_RFCOMM_CHANNEL, "PicoW Controller");
-    sdp_register_service(spp_service_buffer);
-    printf("[SPP] SDP record registered\n");
-
-    // デバイス名・クラス設定
-    gap_set_local_name("PicoW Controller");
-    // Device class: Toy (0x000804) — 用途に合わせて変更可
-    gap_set_class_of_device(0x000804);
-    // SSP (Secure Simple Pairing) 有効
-    gap_ssp_set_io_capability(SSP_IO_CAPABILITY_DISPLAY_YES_NO);
-
-    // HCI イベントハンドラ登録
+    // ========== Phase 1: HCI イベント登録（最初！）==========
     hci_event_callback_registration.callback = &spp_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
+    printf("[SPP] HCI event handler registered\n");
 
-    // heartbeat タイマー開始（初期は未接続間隔）
+    // ========== Phase 2: プロトコルスタック初期化 ==========
+    l2cap_init();
+    printf("[SPP] L2CAP initialized\n");
+
+    rfcomm_init();
+    printf("[SPP] RFCOMM initialized\n");
+
+    // ========== Phase 3: RFCOMM リスナー登録（正規 MTU） ==========
+    // int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
+    // if (service_err != 0) {
+    //     printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
+    // } else {
+    //     printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
+    // }
+
+    sdp_init();
+    printf("[SPP] SDP initialized\n");
+
+    // ========== Phase 4: SDP レコード登録 ==========
+    memset(spp_service_buffer, 0, sizeof(spp_service_buffer));
+    uint32_t service_handle = sdp_create_service_record_handle();
+    spp_create_sdp_record(spp_service_buffer, service_handle,
+                          SPP_RFCOMM_CHANNEL, "PicoW Controller");
+    sdp_register_service(spp_service_buffer);
+    printf("[SPP] SDP record registered (handle=0x%08x, channel=%d)\n", 
+           service_handle, SPP_RFCOMM_CHANNEL);
+
+    // ========== Phase 5: Inquiry/GAP 設定 ==========
+    hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR);
+    gap_set_local_name("PicoW Controller");
+    gap_set_class_of_device(0x000100);
+    printf("[SPP] Device class set to 0x000100 (Miscellaneous Device)\n");
+
+    // ========== Phase 6: Link Policy 設定（必須！修正2と一体） ==========
+    gap_set_default_link_policy_settings(HCI_ENABLE_ROLE_SWITCH);
+    printf("[SPP] Link policy: role switch & sniff mode ENABLED\n");
+
+    // ========== Phase 7: SSP/セキュリティ設定 ==========
+    gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_NO_BONDING);
+    gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+    printf("[SPP] SSP configured (auto-accept mode)\n");
+
+    // ========== Phase 8: heartbeat タイマー設定 ==========
     heartbeat.process = &heartbeat_handler;
     btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_IDLE_MS);
     btstack_run_loop_add_timer(&heartbeat);
+    printf("[SPP] Heartbeat timer initialized\n");
 
+    // ========== Phase 9: HCI 電源ON（最後！）==========
+    printf("[SPP] Enabling Bluetooth...\n");
     hci_power_control(HCI_POWER_ON);
     btstack_run_loop_execute();
 
