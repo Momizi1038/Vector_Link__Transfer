@@ -11,7 +11,7 @@
 // Bluetooth Classic (BR/EDR) 有効化 ← BLEから移行のため追加
 // -------------------------------------------------------
 #define ENABLE_CLASSIC                          // Classic有効化（必須）
-#define ENABLE_L2CAP_ENHANCED_RETRANSMISSION_MODE_FOR_RFCOMM  // RFCOMM安定化
+//#define ENABLE_L2CAP_ENHANCED_RETRANSMISSION_MODE_FOR_RFCOMM  // RFCOMM安定化
  
 // ログ設定
 #define ENABLE_LOG_INFO

@@ -33,6 +33,8 @@
 #define SPP_RFCOMM_CHANNEL    1
 #define HCI_ENABLE_ROLE_SWITCH 0x0001
 
+#define DEBUG_TX_LOG 1
+
 // -------------------------------------------------------
 // SDP レコード用バッファ
 // -------------------------------------------------------
@@ -91,15 +93,16 @@ static void heartbeat_handler(struct btstack_timer_source *ts) {
         make_romdom(&controller_data);
 
         // RFCOMM送信（Classic SPP はストリーム型なので即座に送れる）
-        int err = rfcomm_send(rfcomm_cid,
-                              (uint8_t *)&controller_data,
-                              sizeof(ds4_data));
+        int err = rfcomm_send(rfcomm_cid,(uint8_t *)&controller_data,sizeof(ds4_data));
+        
         if (err == 0) {
+            #if DEBUG_TX_LOG
             printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
                    controller_data.L_x, controller_data.L_y,
                    controller_data.R_x, controller_data.R_y,
                    controller_data.L2,  controller_data.R2,
                    controller_data.key, controller_data.boton);
+            #endif
         } else if (err == BTSTACK_ACL_BUFFERS_FULL) {
             // バッファフル時は次回タイマーで再送
             printf("[TX] Buffer full, skip\n");
@@ -310,14 +313,15 @@ int main(void) {
     gap_set_class_of_device(0x000100);
     printf("[SPP] Device class set to 0x000100 (Miscellaneous Device)\n");
 
-    // ========== Phase 6: Link Policy 設定（必須！修正2と一体） ==========
-    gap_set_default_link_policy_settings(HCI_ENABLE_ROLE_SWITCH);
-    printf("[SPP] Link policy: role switch & sniff mode ENABLED\n");
-
-    // ========== Phase 7: SSP/セキュリティ設定 ==========
+    // ========== Phase 6: SSP/セキュリティ設定 ==========
     gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_NO_BONDING);
     gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     printf("[SPP] SSP configured (auto-accept mode)\n");
+
+    // ========== Phase 7: Discoverable/Connectable 明示的設定 ==========
+    gap_discoverable_control(1);
+    gap_connectable_control(1);
+    printf("[SPP] Discoverable & Connectable mode enabled\n");
 
     // ========== Phase 8: heartbeat タイマー設定 ==========
     heartbeat.process = &heartbeat_handler;
