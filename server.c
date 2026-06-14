@@ -79,7 +79,7 @@ static void make_romdom(ds4_data *output) {
         output->jyoutai + output->L_x + output->L_y +
         output->R_x     + output->R_y + output->L2  +
         output->R2      + output->key + output->boton);
-    output->checsam = sum % 255;
+    output->checsam = sum % 256;
 }
 
 // -------------------------------------------------------
@@ -91,6 +91,7 @@ static void heartbeat_handler(struct btstack_timer_source *ts) {
 
     if (connected && can_send) {
         make_romdom(&controller_data);
+        can_send = false; //送信前にfalseに
 
         // RFCOMM送信（Classic SPP はストリーム型なので即座に送れる）
         int err = rfcomm_send(rfcomm_cid,(uint8_t *)&controller_data,sizeof(ds4_data));
@@ -103,12 +104,14 @@ static void heartbeat_handler(struct btstack_timer_source *ts) {
                    controller_data.L2,  controller_data.R2,
                    controller_data.key, controller_data.boton);
             #endif
+            rfcomm_request_can_send_now_event(rfcomm_cid);
         } else if (err == BTSTACK_ACL_BUFFERS_FULL) {
             // バッファフル時は次回タイマーで再送
             printf("[TX] Buffer full, skip\n");
             can_send = false;
             rfcomm_request_can_send_now_event(rfcomm_cid);
         } else {
+            can_send = true;
             printf("[TX] rfcomm_send error: %d\n", err);
         }
         next_interval = HEARTBEAT_PERIOD_MS;
@@ -149,12 +152,13 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
                     gap_local_bd_addr(event_addr);
                     printf("[SPP] BTstack up on %s\n", bd_addr_to_str(event_addr));
 
-                    int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
-                    if (service_err != 0) {
-                        printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
-                    } else {
-                        printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
-                    }
+                    //以下main関数内に移動
+                    // int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
+                    // if (service_err != 0) {
+                    //     printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
+                    // } else {
+                    //     printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
+                    // }
                     // Discoverable & Connectable に設定
                     gap_discoverable_control(1);
                     gap_connectable_control(1);
@@ -288,12 +292,12 @@ int main(void) {
     printf("[SPP] RFCOMM initialized\n");
 
     // ========== Phase 3: RFCOMM リスナー登録（正規 MTU） ==========
-    // int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
-    // if (service_err != 0) {
-    //     printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
-    // } else {
-    //     printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
-    // }
+    int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
+    if (service_err != 0) {
+        printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
+    } else {
+        printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
+    }
 
     sdp_init();
     printf("[SPP] SDP initialized\n");
