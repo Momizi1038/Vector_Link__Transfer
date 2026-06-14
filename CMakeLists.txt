@@ -38,7 +38,7 @@ pico_sdk_init()
 # Standalone example that reads from the on board temperature sensor and sends notifications via BLE
 # Flashes slowly each second to show it's running
 add_executable(picow_ble_temp_sensor
-    server.c
+    server.cpp
     )
 target_link_libraries(picow_ble_temp_sensor
     pico_stdlib
