@@ -39,6 +39,7 @@ pico_sdk_init()
 # Flashes slowly each second to show it's running
 add_executable(picow_ble_temp_sensor
     server.cpp
+    bluetooth_driver_server.cpp
     )
 target_link_libraries(picow_ble_temp_sensor
     pico_stdlib

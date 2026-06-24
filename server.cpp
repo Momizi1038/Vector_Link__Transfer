@@ -22,6 +22,7 @@
 #include "pico/stdio_usb.h"
 
 #include "type.h"   // ds4_data 構造体
+#include "bluetooth_driver.h"
 
 // -------------------------------------------------------
 // 設定
@@ -43,10 +44,10 @@ static uint8_t spp_service_buffer[512];
 // -------------------------------------------------------
 // グローバル変数
 // -------------------------------------------------------
-static uint8_t         rfcomm_channel_nr  = 0;
-static uint16_t        rfcomm_cid         = 0;   // 0 = 未接続
-static bool            connected          = false;
-static bool            can_send           = false;  // rfcomm_grant_credits 後に送信可能
+// static uint8_t         rfcomm_channel_nr  = 0;
+// static uint16_t        rfcomm_cid         = 0;   // 0 = 未接続
+// static bool            connected          = false;
+// static bool            can_send           = false;  // rfcomm_grant_credits 後に送信可能
 
 static ds4_data        controller_data;
 
@@ -58,8 +59,6 @@ static btstack_timer_source_t                 heartbeat;
 // -------------------------------------------------------
 static void make_romdom(ds4_data *output);
 static void heartbeat_handler(struct btstack_timer_source *ts);
-static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
-                               uint8_t *packet, uint16_t size);
 
 // -------------------------------------------------------
 // ランダムデータ生成（テスト用）
@@ -89,33 +88,46 @@ static void make_romdom(ds4_data *output) {
 static void heartbeat_handler(struct btstack_timer_source *ts) {
     uint32_t next_interval;
 
-    if (connected && can_send) {
-        make_romdom(&controller_data);
-        can_send = false; //送信前にfalseに
+    // if (connected && can_send) {
+    //     make_romdom(&controller_data);
+    //     can_send = false; //送信前にfalseに
 
-        // RFCOMM送信（Classic SPP はストリーム型なので即座に送れる）
-        int err = rfcomm_send(rfcomm_cid,(uint8_t *)&controller_data,sizeof(ds4_data));
+    //     // RFCOMM送信（Classic SPP はストリーム型なので即座に送れる）
+    //     int err = rfcomm_send(rfcomm_cid,(uint8_t *)&controller_data,sizeof(ds4_data));
         
-        if (err == 0) {
-            #if DEBUG_TX_LOG
-            printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-                   controller_data.L_x, controller_data.L_y,
-                   controller_data.R_x, controller_data.R_y,
-                   controller_data.L2,  controller_data.R2,
-                   controller_data.key, controller_data.boton);
-            #endif
-            rfcomm_request_can_send_now_event(rfcomm_cid);
-        } else if (err == BTSTACK_ACL_BUFFERS_FULL) {
-            // バッファフル時は次回タイマーで再送
-            printf("[TX] Buffer full, skip\n");
-            can_send = false;
-            rfcomm_request_can_send_now_event(rfcomm_cid);
-        } else {
-            can_send = true;
-            printf("[TX] rfcomm_send error: %d\n", err);
-        }
+    //     if (err == 0) {
+    //         #if DEBUG_TX_LOG
+    //         printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+    //                controller_data.L_x, controller_data.L_y,
+    //                controller_data.R_x, controller_data.R_y,
+    //                controller_data.L2,  controller_data.R2,
+    //                controller_data.key, controller_data.boton);
+    //         #endif
+    //         rfcomm_request_can_send_now_event(rfcomm_cid);
+    //     } else if (err == BTSTACK_ACL_BUFFERS_FULL) {
+    //         // バッファフル時は次回タイマーで再送
+    //         printf("[TX] Buffer full, skip\n");
+    //         can_send = false;
+    //         rfcomm_request_can_send_now_event(rfcomm_cid);
+    //     } else {
+    //         can_send = true;
+    //         printf("[TX] rfcomm_send error: %d\n", err);
+    //     }
+    //     next_interval = HEARTBEAT_PERIOD_MS;
+    // } else {
+    //     next_interval = HEARTBEAT_IDLE_MS;
+    // }
+    make_romdom(&controller_data);
+    if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
+        #if DEBUG_TX_LOG
+        printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+               controller_data.L_x, controller_data.L_y,
+               controller_data.R_x, controller_data.R_y,
+               controller_data.L2, controller_data.R2,
+               controller_data.key, controller_data.boton);
+        #endif
         next_interval = HEARTBEAT_PERIOD_MS;
-    } else {
+    }else{
         next_interval = HEARTBEAT_IDLE_MS;
     }
 
@@ -132,15 +144,16 @@ static void heartbeat_handler(struct btstack_timer_source *ts) {
 // SPP / RFCOMM / HCI パケットハンドラ
 // Classic では1つのハンドラで HCI・RFCOMM イベントを処理できる
 // -------------------------------------------------------
-static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
-                               uint8_t *packet, uint16_t size) {
+static void spp_packet_handler(uint8_t packet_type, uint16_t channel,uint8_t *packet, uint16_t size) {
     UNUSED(channel);
     UNUSED(size);
 
     bd_addr_t event_addr;
 
-    switch (packet_type) {
+    bluetooth_driver_server_handle_event(packet_type, packet, size);
 
+    if(packet_type != HCI_EVENT_PACKET) return;
+    switch (packet_type) {
         // --------------------------------------------------
         // HCI イベント
         // --------------------------------------------------
@@ -151,14 +164,6 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
                     gap_local_bd_addr(event_addr);
                     printf("[SPP] BTstack up on %s\n", bd_addr_to_str(event_addr));
-
-                    //以下main関数内に移動
-                    // int service_err = rfcomm_register_service(spp_packet_handler, SPP_RFCOMM_CHANNEL, 672);
-                    // if (service_err != 0) {
-                    //     printf("[SPP] ERROR: rfcomm_register_service failed: %d\n", service_err);
-                    // } else {
-                    //     printf("[SPP] RFCOMM service registered on channel %d (MTU=672)\n", SPP_RFCOMM_CHANNEL);
-                    // }
                     // Discoverable & Connectable に設定
                     gap_discoverable_control(1);
                     gap_connectable_control(1);
@@ -178,60 +183,6 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,
                     // SSP: 数値比較を自動承認
                     hci_event_user_confirmation_request_get_bd_addr(packet, event_addr);
                     gap_ssp_confirmation_response(event_addr);
-                    break;
-                }
-
-                case RFCOMM_EVENT_INCOMING_CONNECTION:{
-                    // クライアントからの接続要求
-                    rfcomm_event_incoming_connection_get_bd_addr(packet, event_addr);
-                    rfcomm_channel_nr = rfcomm_event_incoming_connection_get_server_channel(packet);
-                    rfcomm_cid        = rfcomm_event_incoming_connection_get_rfcomm_cid(packet);
-                    printf("[RFCOMM] Incoming connection from %s (requested_channel=%d, cid=0x%04x)\n",
-                           bd_addr_to_str(event_addr), rfcomm_channel_nr, rfcomm_cid);
-                    
-                    // 接続受け入れ
-                    int accept_result = rfcomm_accept_connection(rfcomm_cid);
-                    if (accept_result == 0) {
-                        printf("[RFCOMM] Accepting connection (cid=0x%04x)...\n", rfcomm_cid);
-                    } else {
-                        printf("[RFCOMM] WARNING: rfcomm_accept_connection returned error %d\n", accept_result);
-                        rfcomm_cid = 0;
-                    }
-                    break;
-                }
-
-                case RFCOMM_EVENT_CHANNEL_OPENED:{
-                    if (rfcomm_event_channel_opened_get_status(packet) != ERROR_CODE_SUCCESS) {
-                        printf("[RFCOMM] ERROR: Channel open failed: 0x%02x\n",
-                               rfcomm_event_channel_opened_get_status(packet));
-                        rfcomm_cid = 0;
-                        break;
-                    }
-                    rfcomm_cid = rfcomm_event_channel_opened_get_rfcomm_cid(packet);
-                    connected  = true;
-                    can_send   = true;
-                    printf("[RFCOMM] ===== Channel opened! cid=0x%04x mtu=%d =====",
-                           rfcomm_cid,
-                           rfcomm_event_channel_opened_get_max_frame_size(packet));
-                    printf(" [DATA TX START]\n");
-                    // 接続中は Discoverable を止めて不要な Inquiry 応答を減らす
-                    gap_discoverable_control(0);
-                    break;
-                }
-
-                case RFCOMM_EVENT_CAN_SEND_NOW:{
-                    // バッファが空いたので次の heartbeat で送信できる
-                    can_send = true;
-                    break;
-                }
-
-                case RFCOMM_EVENT_CHANNEL_CLOSED:{
-                    printf("[RFCOMM] Channel closed, returning to Discoverable mode\n");
-                    rfcomm_cid = 0;
-                    connected  = false;
-                    can_send   = false;
-                    // 再度 Discoverable にして次の接続を待つ
-                    gap_discoverable_control(1);
                     break;
                 }
 
