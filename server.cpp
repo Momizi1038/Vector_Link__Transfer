@@ -24,6 +24,13 @@
 #include "type.h"   // ds4_data 構造体
 #include "bluetooth_driver.h"
 
+#include "bsp/board_api.h"
+#include "tusb.h"
+#include "hid_app.h"
+#include "pio_usb.h"
+
+#include "hardware/uart.h"
+
 // -------------------------------------------------------
 // 設定
 // -------------------------------------------------------
@@ -35,6 +42,10 @@
 #define HCI_ENABLE_ROLE_SWITCH 0x0001
 
 #define DEBUG_TX_LOG 1
+
+//PIO USB Config
+#define PIO_USB_DP_PIN_DEFAULT 2
+#define CFG_TUH_RPI_PIO_USB 1
 
 // -------------------------------------------------------
 // SDP レコード用バッファ
