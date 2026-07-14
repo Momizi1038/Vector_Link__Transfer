@@ -13,13 +13,18 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "btstack.h"
 #include "pico/cyw43_arch.h"
 #include "pico/btstack_cyw43.h"
+#include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/rand.h"
-#include "pico/stdio_usb.h"
+
+#include "hardware/uart.h"
+#include "hardware/gpio.h"
+//#include "pico/stdio_usb.h"  //TinyUSBと干渉するため無効化
 
 #include "type.h"   // ds4_data 構造体
 #include "bluetooth_driver.h"
@@ -28,13 +33,14 @@
 #include "tusb.h"
 #include "hid_app.h"
 #include "pio_usb.h"
+#include "send_data.h"
 
 #include "hardware/uart.h"
 
 // -------------------------------------------------------
 // 設定
 // -------------------------------------------------------
-#define HEARTBEAT_PERIOD_MS   20    // 接続中の送信間隔 (ms) - Classic はCI制限なし
+#define HEARTBEAT_PERIOD_MS   1    // 接続中の送信間隔 (ms) - Classic はCI制限なし
 #define HEARTBEAT_IDLE_MS    500    // 未接続時のタイマー間隔 (ms)
 
 // SPPチャンネル番号（1〜30、衝突しない任意の値）
@@ -44,7 +50,6 @@
 #define DEBUG_TX_LOG 1
 
 //PIO USB Config
-#define PIO_USB_DP_PIN_DEFAULT 2
 #define CFG_TUH_RPI_PIO_USB 1
 
 // -------------------------------------------------------
@@ -61,6 +66,7 @@ static uint8_t spp_service_buffer[512];
 // static bool            can_send           = false;  // rfcomm_grant_credits 後に送信可能
 
 static ds4_data        controller_data;
+ds4_data Input_dAta;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 static btstack_timer_source_t                 heartbeat;
@@ -68,28 +74,37 @@ static btstack_timer_source_t                 heartbeat;
 // -------------------------------------------------------
 // 前方宣言
 // -------------------------------------------------------
-static void make_romdom(ds4_data *output);
+static ds4_data make_romdom(void);
 static void heartbeat_handler(struct btstack_timer_source *ts);
 
 // -------------------------------------------------------
 // ランダムデータ生成（テスト用）
 // -------------------------------------------------------
-static void make_romdom(ds4_data *output) {
-    output->jyoutai = 134;
-    output->L_x     = (uint8_t)(get_rand_32() & 0xFF);
-    output->L_y     = (uint8_t)(get_rand_32() & 0xFF);
-    output->R_x     = (uint8_t)(get_rand_32() & 0xFF);
-    output->R_y     = (uint8_t)(get_rand_32() & 0xFF);
-    output->L2      = (uint8_t)(get_rand_32() & 0xFF);
-    output->R2      = (uint8_t)(get_rand_32() & 0xFF);
-    output->key     = (uint8_t)(get_rand_32() & 0xFF);
-    output->boton   = (uint8_t)(get_rand_32() & 0xFF);
+static ds4_data make_romdom(void) {
+    ds4_data output;
+
+    output.jyoutai = 134;
+    output.L_x     = (uint8_t)(get_rand_32() & 0xFF);
+    output.L_y     = (uint8_t)(get_rand_32() & 0xFF);
+    output.R_x     = (uint8_t)(get_rand_32() & 0xFF);
+    output.R_y     = (uint8_t)(get_rand_32() & 0xFF);
+    output.L2      = (uint8_t)(get_rand_32() & 0xFF);
+    output.R2      = (uint8_t)(get_rand_32() & 0xFF);
+    output.key     = (uint8_t)(get_rand_32() & 0xFF);
+    output.boton   = (uint8_t)(get_rand_32() & 0xFF);
 
     uint8_t sum = (uint8_t)(1 +
-        output->jyoutai + output->L_x + output->L_y +
-        output->R_x     + output->R_y + output->L2  +
-        output->R2      + output->key + output->boton);
-    output->checsam = sum % 256;
+        output.jyoutai + output.L_x + output.L_y +
+        output.R_x     + output.R_y + output.L2  +
+        output.R2      + output.key + output.boton);
+    output.checsam = sum % 256;
+
+    return output;
+}
+
+static ds4_data get_ps4data_by_usb(void) {
+  tuh_task();
+  return Input_dAta;
 }
 
 // -------------------------------------------------------
@@ -98,37 +113,8 @@ static void make_romdom(ds4_data *output) {
 // -------------------------------------------------------
 static void heartbeat_handler(struct btstack_timer_source *ts) {
     uint32_t next_interval;
-
-    // if (connected && can_send) {
-    //     make_romdom(&controller_data);
-    //     can_send = false; //送信前にfalseに
-
-    //     // RFCOMM送信（Classic SPP はストリーム型なので即座に送れる）
-    //     int err = rfcomm_send(rfcomm_cid,(uint8_t *)&controller_data,sizeof(ds4_data));
-        
-    //     if (err == 0) {
-    //         #if DEBUG_TX_LOG
-    //         printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-    //                controller_data.L_x, controller_data.L_y,
-    //                controller_data.R_x, controller_data.R_y,
-    //                controller_data.L2,  controller_data.R2,
-    //                controller_data.key, controller_data.boton);
-    //         #endif
-    //         rfcomm_request_can_send_now_event(rfcomm_cid);
-    //     } else if (err == BTSTACK_ACL_BUFFERS_FULL) {
-    //         // バッファフル時は次回タイマーで再送
-    //         printf("[TX] Buffer full, skip\n");
-    //         can_send = false;
-    //         rfcomm_request_can_send_now_event(rfcomm_cid);
-    //     } else {
-    //         can_send = true;
-    //         printf("[TX] rfcomm_send error: %d\n", err);
-    //     }
-    //     next_interval = HEARTBEAT_PERIOD_MS;
-    // } else {
-    //     next_interval = HEARTBEAT_IDLE_MS;
-    // }
-    make_romdom(&controller_data);
+    
+    controller_data = make_romdom();
     if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
         #if DEBUG_TX_LOG
         printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
@@ -229,12 +215,28 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,uint8_t *pa
 // main
 // -------------------------------------------------------
 int main(void) {
+    board_init();
     stdio_init_all();
 
-    for (int i = 0; i < 30; i++) {
-        if (stdio_usb_connected()) break;
-        sleep_ms(100);
-    }
+    bool chack = false;
+    pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
+    pio_cfg.pin_dp = 4;// 例: D+ピン(GPIO27)
+    pio_cfg.pinout = PIO_USB_PINOUT_DPDM; // DM=DP-1
+    chack = tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
+    printf("tuh_configure:%d\n", chack);
+
+    chack = tusb_init(1);
+    printf("tusb_init: %d\n", chack);
+
+    board_init_after_tusb();
+    // if (board_init_after_tusb) {
+    //     board_init_after_tusb();
+    // }
+
+    // for (int i = 0; i < 30; i++) {
+    //     if (stdio_usb_connected()) break;
+    //     sleep_ms(100);
+    // }
 
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");

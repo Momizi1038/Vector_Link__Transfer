@@ -28,20 +28,33 @@ set(PICO_BOARD pico2_w CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(Vector_Link_Transfer_v1 C CXX ASM)
+project(Vector_Link_Transfer C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_executable(Vector_Link_Transfer_v1
-    server.cpp
-    bluetooth_driver_server.cpp
-    hid_app.c
-)
+# Add executable. Default name is the project name, version 0.1
+set(TINYUSB_HOST 1)
 
-target_sources(Vector_Link_Transfer_v1 PRIVATE
+# Standalone example that reads from the on board temperature sensor and sends notifications via BLE
+# Flashes slowly each second to show it's running
+add_executable(Vector_Link_Transfer
+    server.cpp
+    hid_app.c
+    bluetooth_driver_server.cpp
+    send_data.cpp
+    )
+
+pico_enable_stdio_usb(Vector_Link_Transfer 0)
+pico_enable_stdio_uart(Vector_Link_Transfer 1)
+
+set(FAMILY rp3050)
+
+target_sources(Vector_Link_Transfer PRIVATE
     ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
 )
+
+add_subdirectory(lib/Pico-PIO-USB)
 
 add_compile_definitions(
     CFG_TUSB_MCU=OPT_MCU_RP2040
@@ -49,15 +62,10 @@ add_compile_definitions(
     CFG_TUH_ENABLED=1
 )
 
-add_subdirectory(lib/Pico-PIO-USB)
+add_library(pio_usb_host INTERFACE)
+target_link_libraries(pio_usb_host INTERFACE pico_pio_usb)
 
-# Add executable. Default name is the project name, version 0.1
-pico_set_program_name(Vector_Link_Transfer_v1 "Vector_Link_Transfer")
-pico_set_program_version(Vector_Link_Transfer_v1 "0.1")
-
-# Standalone example that reads from the on board temperature sensor and sends notifications via BLE
-# Flashes slowly each second to show it's running
-target_link_libraries(Vector_Link_Transfer_v1
+target_link_libraries(Vector_Link_Transfer
     pico_stdlib
     pico_btstack_classic  
     pico_btstack_cyw43
@@ -69,14 +77,11 @@ target_link_libraries(Vector_Link_Transfer_v1
     tinyusb_board
     tinyusb_host
     )
-target_include_directories(Vector_Link_Transfer_v1 PRIVATE
+target_include_directories(Vector_Link_Transfer PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/.. # For our common btstack config
     lib/Pico-PIO-USB
     )
-# pico_btstack_make_gatt_header(Vector_Link_Transfer_v1 PRIVATE "${CMAKE_CURRENT_LIST_DIR}/temp_sensor.gatt")
+# pico_btstack_make_gatt_header(Vector_Link_Transfer PRIVATE "${CMAKE_CURRENT_LIST_DIR}/temp_sensor.gatt")
 
-pico_enable_stdio_usb(Vector_Link_Transfer_v1 0)
-pico_enable_stdio_uart(Vector_Link_Transfer_v1 1)
-
-pico_add_extra_outputs(Vector_Link_Transfer_v1)
+pico_add_extra_outputs(Vector_Link_Transfer)
