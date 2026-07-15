@@ -29,6 +29,8 @@ void usb_driver_init(void);
 // (heartbeat_handler内や専用のポーリングループから呼び出すことを想定)
 void usb_driver_task(void);
 
+void usb_ds4_color(uint8_t r,uint8_t g,uint8_t b);
+
 // ---- 最新のUSBコントローラ入力データを取得 ----
 ds4_data usb_driver_get_data(void);
 

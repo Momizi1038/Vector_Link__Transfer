@@ -36,13 +36,17 @@
 // 設定
 // -------------------------------------------------------
 #define HEARTBEAT_PERIOD_MS   1    // 接続中の送信間隔 (ms) - Classic はCI制限なし
-#define HEARTBEAT_IDLE_MS    500    // 未接続時のタイマー間隔 (ms)
+#define HEARTBEAT_IDLE_MS     1    // 未接続時のタイマー間隔 (ms)
 
 // SPPチャンネル番号（1〜30、衝突しない任意の値）
 #define SPP_RFCOMM_CHANNEL    1
 #define HCI_ENABLE_ROLE_SWITCH 0x0001
 
 #define DEBUG_TX_LOG 1
+
+#define ConectLED_D1 6
+#define BlueLED_D2 3
+#define Yellow_D3 2
 
 // -------------------------------------------------------
 // SDP レコード用バッファ
@@ -92,36 +96,6 @@ static ds4_data make_romdom(void) {
     output.checsam = sum % 256;
 
     return output;
-}
-
-// -------------------------------------------------------
-// heartbeatタイマーコールバック
-// データ生成・RFCOMM送信
-// -------------------------------------------------------
-static void heartbeat_handler(struct btstack_timer_source *ts) {
-    uint32_t next_interval;
-    
-    controller_data = make_romdom();
-    if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
-        #if DEBUG_TX_LOG
-        printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-               controller_data.L_x, controller_data.L_y,
-               controller_data.R_x, controller_data.R_y,
-               controller_data.L2, controller_data.R2,
-               controller_data.key, controller_data.boton);
-        #endif
-        next_interval = HEARTBEAT_PERIOD_MS;
-    }else{
-        next_interval = HEARTBEAT_IDLE_MS;
-    }
-
-    // LED 点滅
-    static bool led_on = true;
-    led_on = !led_on;
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
-
-    btstack_run_loop_set_timer(ts, next_interval);
-    btstack_run_loop_add_timer(ts);
 }
 
 // -------------------------------------------------------
@@ -207,6 +181,14 @@ int main(void) {
     // という順序をusb_driver.h経由の2段階呼び出しで再現している。
     usb_driver_board_init();   // = board_init()
     stdio_init_all();
+
+    gpio_init(ConectLED_D1);
+    gpio_init(BlueLED_D2);
+    gpio_init(Yellow_D3);
+    gpio_set_dir(ConectLED_D1,GPIO_OUT);
+    gpio_set_dir(BlueLED_D2,GPIO_OUT);
+    gpio_set_dir(Yellow_D3,GPIO_OUT);
+    
     usb_driver_init();         // = pio_cfg設定 + tuh_configure + tusb_init + board_init_after_tusb
 
     if (cyw43_arch_init()) {
@@ -263,15 +245,42 @@ int main(void) {
     printf("[SPP] Discoverable & Connectable mode enabled\n");
 
     // ========== Phase 8: heartbeat タイマー設定 ==========
-    heartbeat.process = &heartbeat_handler;
-    btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_IDLE_MS);
-    btstack_run_loop_add_timer(&heartbeat);
-    printf("[SPP] Heartbeat timer initialized\n");
+    // heartbeat.process = &heartbeat_handler;
+    // btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_IDLE_MS);
+    // btstack_run_loop_add_timer(&heartbeat);
+    // printf("[SPP] Heartbeat timer initialized\n");
 
     // ========== Phase 9: HCI 電源ON（最後！）==========
     printf("[SPP] Enabling Bluetooth...\n");
     hci_power_control(HCI_POWER_ON);
-    btstack_run_loop_execute();
+    //btstack_run_loop_execute();
 
+    while(true){
+        usb_ds4_color(0, 255, 200);
+        gpio_put(Yellow_D3, led);
+        usb_driver_task();
+        controller_data = usb_driver_get_data();
+        //controller_data = make_romdom();
+        gpio_put(BlueLED_D2, led);
+
+        if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
+            #if DEBUG_TX_LOG
+            printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+                controller_data.L_x, controller_data.L_y,
+                controller_data.R_x, controller_data.R_y,
+                controller_data.L2, controller_data.R2,
+                controller_data.key, controller_data.boton);
+            #endif
+
+            gpio_put(ConectLED_D1, true);
+        }else{
+            gpio_put(ConectLED_D1, false);
+        }
+
+        // LED 点滅
+        static bool led_on = true;
+        led_on = !led_on;
+        //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
+    }
     return 0;
 }
