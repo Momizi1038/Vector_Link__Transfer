@@ -99,47 +99,6 @@ static ds4_data make_romdom(void) {
 }
 
 // -------------------------------------------------------
-// heartbeatタイマーコールバック
-// データ生成・RFCOMM送信
-// -------------------------------------------------------
-static void heartbeat_handler(struct btstack_timer_source *ts) {
-    uint32_t next_interval;
-    static bool led = false;
-
-    led = !led;
-    
-    usb_ds4_color(0, 255, 200);
-    gpio_put(Yellow_D3, led);
-    usb_driver_task();
-    controller_data = usb_driver_get_data();
-    //controller_data = make_romdom();
-    gpio_put(BlueLED_D2, led);
-
-    if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
-        #if DEBUG_TX_LOG
-        printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-               controller_data.L_x, controller_data.L_y,
-               controller_data.R_x, controller_data.R_y,
-               controller_data.L2, controller_data.R2,
-               controller_data.key, controller_data.boton);
-        #endif
-        next_interval = HEARTBEAT_PERIOD_MS;
-    }else{
-        next_interval = HEARTBEAT_IDLE_MS;
-    }
-
-    gpio_put(ConectLED_D1, led);
-
-    // LED 点滅
-    static bool led_on = true;
-    led_on = !led_on;
-    //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
-
-    btstack_run_loop_set_timer(ts, next_interval);
-    btstack_run_loop_add_timer(ts);
-}
-
-// -------------------------------------------------------
 // SPP / RFCOMM / HCI パケットハンドラ
 // Classic では1つのハンドラで HCI・RFCOMM イベントを処理できる
 // -------------------------------------------------------
@@ -286,15 +245,46 @@ int main(void) {
     printf("[SPP] Discoverable & Connectable mode enabled\n");
 
     // ========== Phase 8: heartbeat タイマー設定 ==========
-    heartbeat.process = &heartbeat_handler;
-    btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_IDLE_MS);
-    btstack_run_loop_add_timer(&heartbeat);
-    printf("[SPP] Heartbeat timer initialized\n");
+    // heartbeat.process = &heartbeat_handler;
+    // btstack_run_loop_set_timer(&heartbeat, HEARTBEAT_IDLE_MS);
+    // btstack_run_loop_add_timer(&heartbeat);
+    // printf("[SPP] Heartbeat timer initialized\n");
 
     // ========== Phase 9: HCI 電源ON（最後！）==========
     printf("[SPP] Enabling Bluetooth...\n");
     hci_power_control(HCI_POWER_ON);
-    btstack_run_loop_execute();
+    //btstack_run_loop_execute();
 
+    while(true){
+        static bool led = false;
+
+        led = !led;
+    
+        usb_ds4_color(0, 255, 200);
+        gpio_put(Yellow_D3, led);
+        usb_driver_task();
+        controller_data = usb_driver_get_data();
+        //controller_data = make_romdom();
+        gpio_put(BlueLED_D2, led);
+
+        if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
+            #if DEBUG_TX_LOG
+            printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+                controller_data.L_x, controller_data.L_y,
+                controller_data.R_x, controller_data.R_y,
+                controller_data.L2, controller_data.R2,
+                controller_data.key, controller_data.boton);
+            #endif
+        }else{
+
+        }
+
+        gpio_put(ConectLED_D1, led);
+
+        // LED 点滅
+        static bool led_on = true;
+        led_on = !led_on;
+        //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
+        }
     return 0;
 }
