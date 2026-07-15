@@ -40,6 +40,7 @@ set(TINYUSB_HOST 1)
 # Flashes slowly each second to show it's running
 add_executable(Vector_Link_Transfer
     server.cpp
+    usb_driver.c
     hid_app.c
     bluetooth_driver_server.cpp
     send_data.cpp

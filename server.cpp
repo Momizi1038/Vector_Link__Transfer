@@ -28,12 +28,7 @@
 
 #include "type.h"   // ds4_data 構造体
 #include "bluetooth_driver.h"
-
-#include "bsp/board_api.h"
-#include "tusb.h"
-#include "hid_app.h"
-#include "pio_usb.h"
-#include "send_data.h"
+#include "usb_driver.h"  // USB(TinyUSB)関連はここに隔離。tusb系ヘッダはここではincludeしない
 
 #include "hardware/uart.h"
 
@@ -49,9 +44,6 @@
 
 #define DEBUG_TX_LOG 1
 
-//PIO USB Config
-#define CFG_TUH_RPI_PIO_USB 1
-
 // -------------------------------------------------------
 // SDP レコード用バッファ
 // -------------------------------------------------------
@@ -66,7 +58,7 @@ static uint8_t spp_service_buffer[512];
 // static bool            can_send           = false;  // rfcomm_grant_credits 後に送信可能
 
 static ds4_data        controller_data;
-ds4_data Input_dAta;
+// Input_dAta の実体は usb_driver.c 側に移動した
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 static btstack_timer_source_t                 heartbeat;
@@ -100,11 +92,6 @@ static ds4_data make_romdom(void) {
     output.checsam = sum % 256;
 
     return output;
-}
-
-static ds4_data get_ps4data_by_usb(void) {
-  tuh_task();
-  return Input_dAta;
 }
 
 // -------------------------------------------------------
@@ -215,28 +202,12 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,uint8_t *pa
 // main
 // -------------------------------------------------------
 int main(void) {
-    board_init();
+    // Phase 0: USB(TinyUSB)初期化 — 元のmain()と同じ呼び出し順序を維持
+    //   board_init() → stdio_init_all() → (pio設定/tuh_configure/tusb_init/board_init_after_tusb)
+    // という順序をusb_driver.h経由の2段階呼び出しで再現している。
+    usb_driver_board_init();   // = board_init()
     stdio_init_all();
-
-    bool chack = false;
-    pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
-    pio_cfg.pin_dp = 4;// 例: D+ピン(GPIO27)
-    pio_cfg.pinout = PIO_USB_PINOUT_DPDM; // DM=DP-1
-    chack = tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
-    printf("tuh_configure:%d\n", chack);
-
-    chack = tusb_init(1);
-    printf("tusb_init: %d\n", chack);
-
-    board_init_after_tusb();
-    // if (board_init_after_tusb) {
-    //     board_init_after_tusb();
-    // }
-
-    // for (int i = 0; i < 30; i++) {
-    //     if (stdio_usb_connected()) break;
-    //     sleep_ms(100);
-    // }
+    usb_driver_init();         // = pio_cfg設定 + tuh_configure + tusb_init + board_init_after_tusb
 
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
@@ -272,8 +243,8 @@ int main(void) {
     spp_create_sdp_record(spp_service_buffer, service_handle,
                           SPP_RFCOMM_CHANNEL, "PicoW Controller");
     sdp_register_service(spp_service_buffer);
-    printf("[SPP] SDP record registered (handle=0x%08x, channel=%d)\n", 
-           service_handle, SPP_RFCOMM_CHANNEL);
+    printf("[SPP] SDP record registered (handle=0x%08lx, channel=%d)\n", 
+           (unsigned long)service_handle, SPP_RFCOMM_CHANNEL);
 
     // ========== Phase 5: Inquiry/GAP 設定 ==========
     hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR);
