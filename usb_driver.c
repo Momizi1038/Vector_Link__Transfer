@@ -19,6 +19,7 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 #include "pio_usb.h"
+#include "hid_app.h"
 
 // hid_app.c 側では `extern ds4_data Input_dAta;` として参照される実体。
 // 従来 server.cpp にあった定義をこちらに移動した。
@@ -41,13 +42,20 @@ void usb_driver_init(void) {
     chack = tusb_init(1);
     printf("tusb_init: %d\n", chack);
 
-    board_init_after_tusb();
+    if (board_init_after_tusb) {
+        board_init_after_tusb();
+    }
 }
 
 void usb_driver_task(void) {
     tuh_task();
 }
 
+void usb_ds4_color(uint8_t r,uint8_t g,uint8_t b){
+    hid_app_task(r, g, b);
+}
+
 ds4_data usb_driver_get_data(void) {
+    //tuh_task();
     return Input_dAta;
 }

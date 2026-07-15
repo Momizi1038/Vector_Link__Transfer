@@ -186,6 +186,10 @@ void hid_app_task(uint8_t r,uint8_t g,uint8_t b)
   }
 }
 
+bool tuh_mount_chack(void){
+  return ds4_mounted;
+}
+
 //--------------------------------------------------------------------+
 // TinyUSB Callbacks
 //--------------------------------------------------------------------+
