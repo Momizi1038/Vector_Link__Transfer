@@ -28,6 +28,8 @@ int bluetooth_send(const uint8_t *data, uint16_t size) {
         can_send = true;
         printf("[TX] rfcomm_send error: %d\n", err);
     }
+
+    printf("connected=%d can_send=%d cid=%04x\n",connected,can_send,rfcomm_cid);
     return err;
 }
 

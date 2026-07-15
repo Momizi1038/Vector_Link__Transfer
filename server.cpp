@@ -256,10 +256,6 @@ int main(void) {
     //btstack_run_loop_execute();
 
     while(true){
-        static bool led = false;
-
-        led = !led;
-    
         usb_ds4_color(0, 255, 200);
         gpio_put(Yellow_D3, led);
         usb_driver_task();
@@ -275,16 +271,16 @@ int main(void) {
                 controller_data.L2, controller_data.R2,
                 controller_data.key, controller_data.boton);
             #endif
+
+            gpio_put(ConectLED_D1, true);
         }else{
-
+            gpio_put(ConectLED_D1, false);
         }
-
-        gpio_put(ConectLED_D1, led);
 
         // LED 点滅
         static bool led_on = true;
         led_on = !led_on;
         //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
-        }
+    }
     return 0;
 }
