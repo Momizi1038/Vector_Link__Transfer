@@ -257,11 +257,9 @@ int main(void) {
 
     while(true){
         usb_ds4_color(0, 255, 200);
-        gpio_put(Yellow_D3, led);
         usb_driver_task();
         controller_data = usb_driver_get_data();
         //controller_data = make_romdom();
-        gpio_put(BlueLED_D2, led);
 
         if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
             #if DEBUG_TX_LOG
