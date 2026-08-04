@@ -1,9 +1,25 @@
-#include "hid_app.h"
+//#include "hid_app.h"
 #include "type.h"
+//#include "lib/E220Connect/e220.h"
+#include "hardware/uart.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define BAUD_UART_RATE 115200
+#define DEFAULT_ADDH 0
+#define DEFAULT_ADDL 0
+#define DEFAULT_CH 0
+#define E220_1_UART_TXPIN 8
+#define E220_1_UART_RXPIN 9
+#define E220_1_M0PIN 11
+#define E220_1_M1PIN 10
+#define E220_1_AUXPIN 7
+
+#define TARGET_ADDH 0
+#define TARGET_ADDL 0
+#define TARGET_CH 0
 
 // typedef struct {
 //     uint8_t jyoutai;
@@ -23,12 +39,12 @@ extern "C" {
 
 //     uint8_t checsam;
 // }ds4_data;
-
-ds4_data setDeta(uint8_t const* report, uint16_t len);
-
 bool changeData(int* output , ds4_data rewdata);
 
-bool set_LED(int* output,uint8_t red,uint8_t green,uint8_t bure );
+void Lora1_init(void);
+bool Lora1_send_ds4(ds4_data input, int CH);
+
+bool Lora1_read_Aux(void);
 
 #ifdef __cplusplus
 }

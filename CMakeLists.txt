@@ -44,6 +44,7 @@ add_executable(Vector_Link_Transfer
     hid_app.c
     bluetooth_driver_server.cpp
     send_data.cpp
+    lib/E220Connect/e220.cpp
     )
 
 pico_enable_stdio_usb(Vector_Link_Transfer 0)

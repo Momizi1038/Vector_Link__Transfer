@@ -30,7 +30,8 @@
 #include "bluetooth_driver.h"
 #include "usb_driver.h"  // USB(TinyUSB)関連はここに隔離。tusb系ヘッダはここではincludeしない
 
-#include "hardware/uart.h"
+#include "lib/E220Connect/e220.h"
+#include "send_data.h"
 
 // -------------------------------------------------------
 // 設定
@@ -65,13 +66,13 @@ static ds4_data        controller_data;
 // Input_dAta の実体は usb_driver.c 側に移動した
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
-static btstack_timer_source_t                 heartbeat;
+//static btstack_timer_source_t                 heartbeat;
 
 // -------------------------------------------------------
 // 前方宣言
 // -------------------------------------------------------
 static ds4_data make_romdom(void);
-static void heartbeat_handler(struct btstack_timer_source *ts);
+//static void heartbeat_handler(struct btstack_timer_source *ts);
 
 // -------------------------------------------------------
 // ランダムデータ生成（テスト用）
@@ -191,6 +192,9 @@ int main(void) {
     
     usb_driver_init();         // = pio_cfg設定 + tuh_configure + tusb_init + board_init_after_tusb
 
+    Lora1_init();
+
+
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
         return -1;
@@ -257,15 +261,15 @@ int main(void) {
 
     while(true){
         usb_ds4_color(0, 255, 200);
-        gpio_put(Yellow_D3, led);
         usb_driver_task();
         controller_data = usb_driver_get_data();
         //controller_data = make_romdom();
-        gpio_put(BlueLED_D2, led);
 
-        if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
+        //データ送信層
+        if(bluetooth_can_send() && bluetooth_is_connected()){
+            bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
             #if DEBUG_TX_LOG
-            printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+            printf("[BT] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
                 controller_data.L_x, controller_data.L_y,
                 controller_data.R_x, controller_data.R_y,
                 controller_data.L2, controller_data.R2,
@@ -273,6 +277,8 @@ int main(void) {
             #endif
 
             gpio_put(ConectLED_D1, true);
+        }else if(Lora1_read_Aux()){
+            if(Lora1_send_ds4(controller_data,TARGET_CH)) gpio_put(ConectLED_D1, true);
         }else{
             gpio_put(ConectLED_D1, false);
         }
