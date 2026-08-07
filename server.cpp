@@ -254,23 +254,38 @@ int main(void) {
     printf("[SPP] Enabling Bluetooth...\n");
     hci_power_control(HCI_POWER_ON);
     //btstack_run_loop_execute();
+    absolute_time_t nowTime = get_absolute_time();
+    absolute_time_t next_send_bt = nowTime;
 
     while(true){
         usb_ds4_color(0, 255, 200);
-        gpio_put(Yellow_D3, led);
         usb_driver_task();
         controller_data = usb_driver_get_data();
         //controller_data = make_romdom();
-        gpio_put(BlueLED_D2, led);
 
-        if(bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data)) == 0){
-            #if DEBUG_TX_LOG
-            printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-                controller_data.L_x, controller_data.L_y,
-                controller_data.R_x, controller_data.R_y,
-                controller_data.L2, controller_data.R2,
-                controller_data.key, controller_data.boton);
-            #endif
+        #if DEBUG_TX_LOG
+        printf("[GET] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%3d\n",
+            controller_data.L_x, controller_data.L_y,
+            controller_data.R_x, controller_data.R_y,
+            controller_data.L2, controller_data.R2,
+            controller_data.key, controller_data.boton, 
+            controller_data.jyoutai, controller_data.checsam);
+        #endif
+
+        //送信
+        nowTime = get_absolute_time();
+        if(bluetooth_can_send() && bluetooth_is_connected()){
+            if(absolute_time_diff_us(next_send_bt, nowTime) >= 0){
+                bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
+                next_send_bt = delayed_by_ms(nowTime,15);//第2引数が送信間隔
+            }
+            // #if DEBUG_TX_LOG
+            // printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
+            //     controller_data.L_x, controller_data.L_y,
+            //     controller_data.R_x, controller_data.R_y,
+            //     controller_data.L2, controller_data.R2,
+            //     controller_data.key, controller_data.boton);
+            // #endif
 
             gpio_put(ConectLED_D1, true);
         }else{
@@ -278,8 +293,8 @@ int main(void) {
         }
 
         // LED 点滅
-        static bool led_on = true;
-        led_on = !led_on;
+        // static bool led_on = true;
+        // led_on = !led_on;
         //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
     }
     return 0;
