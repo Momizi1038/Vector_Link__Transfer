@@ -11,7 +11,7 @@ bool bluetooth_can_send(void)     { return can_send; }
 
 int bluetooth_send(const uint8_t *data, uint16_t size) {
 
-    printf("can_snd=%d",can_send);
+    //printf("can_snd=%d",can_send);
 
     if (!connected || !can_send) return -1;
     can_send = false; // 送信前にfalseに
@@ -31,7 +31,7 @@ int bluetooth_send(const uint8_t *data, uint16_t size) {
         printf("[TX] rfcomm_send error: %d\n", err);
     }
 
-    printf("con=%d cid=%04x\n",connected,rfcomm_cid);
+    printf("cid=%04x err=%x\n",rfcomm_cid,err);
     return err;
 }
 

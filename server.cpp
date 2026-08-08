@@ -65,13 +65,11 @@ static ds4_data        controller_data;
 // Input_dAta の実体は usb_driver.c 側に移動した
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
-static btstack_timer_source_t                 heartbeat;
 
 // -------------------------------------------------------
 // 前方宣言
 // -------------------------------------------------------
 static ds4_data make_romdom(void);
-static void heartbeat_handler(struct btstack_timer_source *ts);
 
 // -------------------------------------------------------
 // ランダムデータ生成（テスト用）
@@ -256,6 +254,8 @@ int main(void) {
     //btstack_run_loop_execute();
     absolute_time_t nowTime = get_absolute_time();
     absolute_time_t next_send_bt = nowTime;
+    absolute_time_t last_log = 0;
+    uint32_t tx_count = 0;
 
     while(true){
         usb_ds4_color(0, 255, 200);
@@ -263,29 +263,32 @@ int main(void) {
         controller_data = usb_driver_get_data();
         //controller_data = make_romdom();
 
-        #if DEBUG_TX_LOG
-        printf("[GET] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%3d\n",
-            controller_data.L_x, controller_data.L_y,
-            controller_data.R_x, controller_data.R_y,
-            controller_data.L2, controller_data.R2,
-            controller_data.key, controller_data.boton, 
-            controller_data.jyoutai, controller_data.checsam);
-        #endif
+        if(bluetooth_is_connected()){
+            #if DEBUG_TX_LOG
+            // printf("[GET] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%3d\n",
+                // controller_data.L_x, controller_data.L_y,
+                // controller_data.R_x, controller_data.R_y,
+                // controller_data.L2, controller_data.R2,
+                // controller_data.key, controller_data.boton, 
+                // controller_data.jyoutai, controller_data.checsam);
+            printf("[GET]Lx:%3d,Rx:%3d,ste:%3d",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
 
+            #endif
+        }
+        
         //送信
         nowTime = get_absolute_time();
         if(bluetooth_can_send() && bluetooth_is_connected()){
             if(absolute_time_diff_us(next_send_bt, nowTime) >= 0){
-                bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
                 next_send_bt = delayed_by_ms(nowTime,15);//第2引数が送信間隔
             }
-            // #if DEBUG_TX_LOG
+            #if DEBUG_TX_LOG
             // printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
             //     controller_data.L_x, controller_data.L_y,
             //     controller_data.R_x, controller_data.R_y,
             //     controller_data.L2, controller_data.R2,
             //     controller_data.key, controller_data.boton);
-            // #endif
+            #endif
 
             gpio_put(ConectLED_D1, true);
         }else{
