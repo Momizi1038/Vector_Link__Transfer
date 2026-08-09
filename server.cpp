@@ -21,6 +21,7 @@
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/rand.h"
+#include "pico/multicore.h"
 
 #include "hardware/uart.h"
 #include "hardware/gpio.h"
@@ -173,12 +174,43 @@ static void spp_packet_handler(uint8_t packet_type, uint16_t channel,uint8_t *pa
 // -------------------------------------------------------
 // main
 // -------------------------------------------------------
+critical_section_t cs_ctrl_data;
+critical_section_t cs_bt_connect;
+
+ds4_data share_ctrl_data;
+bool  share_bt_connect;
+
+void core1_entry(){
+    usb_driver_init();
+    usb_ds4_color(50,200,250);
+    while (true) {
+        usb_driver_task();
+        ds4_data d = usb_driver_get_data();
+
+        critical_section_enter_blocking(&cs_ctrl_data);
+        share_ctrl_data = d;
+        critical_section_exit(&cs_ctrl_data);
+
+        critical_section_enter_blocking(&cs_bt_connect);
+        bool bt_ok = share_bt_connect;
+        critical_section_exit(&cs_bt_connect);
+
+        //if (!bt_ok && Lora1_read_Aux()) {
+            // Lora1_send_ds4(d, TARGET_CH);
+        // }
+    }
+}
+
 int main(void) {
     // Phase 0: USB(TinyUSB)初期化 — 元のmain()と同じ呼び出し順序を維持
     //   board_init() → stdio_init_all() → (pio設定/tuh_configure/tusb_init/board_init_after_tusb)
     // という順序をusb_driver.h経由の2段階呼び出しで再現している。
-    usb_driver_board_init();   // = board_init()
     stdio_init_all();
+
+    critical_section_init(&cs_ctrl_data);
+    critical_section_init(&cs_bt_connect);
+
+    multicore_launch_core1(core1_entry);
 
     gpio_init(ConectLED_D1);
     gpio_init(BlueLED_D2);
@@ -186,9 +218,8 @@ int main(void) {
     gpio_set_dir(ConectLED_D1,GPIO_OUT);
     gpio_set_dir(BlueLED_D2,GPIO_OUT);
     gpio_set_dir(Yellow_D3,GPIO_OUT);
+    gpio_put(Yellow_D3,true);
     
-    usb_driver_init();         // = pio_cfg設定 + tuh_configure + tusb_init + board_init_after_tusb
-
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
         return -1;
@@ -254,14 +285,16 @@ int main(void) {
     //btstack_run_loop_execute();
     absolute_time_t nowTime = get_absolute_time();
     absolute_time_t next_send_bt = nowTime;
-    absolute_time_t last_log = 0;
-    uint32_t tx_count = 0;
+    //absolute_time_t last_log = 0;
+    //uint32_t tx_count = 0;
+
+    
 
     while(true){
-        usb_ds4_color(0, 255, 200);
-        usb_driver_task();
-        controller_data = usb_driver_get_data();
-        //controller_data = make_romdom();
+        bool connected_bt = bluetooth_can_send() && bluetooth_is_connected();
+        critical_section_enter_blocking(&cs_bt_connect);
+        share_bt_connect = connected_bt;
+        critical_section_exit(&cs_bt_connect);
 
         if(bluetooth_is_connected()){
             #if DEBUG_TX_LOG
@@ -271,15 +304,20 @@ int main(void) {
                 // controller_data.L2, controller_data.R2,
                 // controller_data.key, controller_data.boton, 
                 // controller_data.jyoutai, controller_data.checsam);
-            printf("[GET]Lx:%3d,Rx:%3d,ste:%3d",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
+            printf("[GET]Lx:%3d,Rx:%3d,ste:%3d\n",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
 
             #endif
         }
         
         //送信
         nowTime = get_absolute_time();
-        if(bluetooth_can_send() && bluetooth_is_connected()){
+        if(connected_bt){
             if(absolute_time_diff_us(next_send_bt, nowTime) >= 0){
+                critical_section_enter_blocking(&cs_ctrl_data);
+                controller_data = share_ctrl_data;
+                critical_section_exit(&cs_ctrl_data);
+                //controller_data = make_romdom();
+                //bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
                 next_send_bt = delayed_by_ms(nowTime,15);//第2引数が送信間隔
             }
             #if DEBUG_TX_LOG
