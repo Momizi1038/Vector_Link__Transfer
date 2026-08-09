@@ -304,7 +304,7 @@ int main(void) {
                 // controller_data.L2, controller_data.R2,
                 // controller_data.key, controller_data.boton, 
                 // controller_data.jyoutai, controller_data.checsam);
-            printf("[GET]Lx:%3d,Rx:%3d,ste:%3d\n",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
+            // printf("[GET]Lx:%3d,Rx:%3d,ste:%3d\n",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
 
             #endif
         }
@@ -317,8 +317,9 @@ int main(void) {
                 controller_data = share_ctrl_data;
                 critical_section_exit(&cs_ctrl_data);
                 //controller_data = make_romdom();
-                //bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
+                int err = bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
                 next_send_bt = delayed_by_ms(nowTime,15);//第2引数が送信間隔
+                printf("connect BT,ERR:%d\n",err);
             }
             #if DEBUG_TX_LOG
             // printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
