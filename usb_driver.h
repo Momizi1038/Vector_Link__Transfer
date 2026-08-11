@@ -12,6 +12,10 @@
 extern "C" {
 #endif
 
+ds4_data setDeta(uint8_t const* report, uint16_t len);
+
+bool set_LED(int* output,uint8_t red,uint8_t green,uint8_t bure );
+
 // ---- Phase 1: board_init() のみを行う ----
 // 元の main() の呼び出し順を維持するため、
 // 必ず stdio_init_all() より前に呼ぶこと。

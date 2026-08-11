@@ -1,84 +1,10 @@
-#include "hid_app.h"
+//#include "hid_app.h"
 #include "send_data.h"
+#include "lib/E220Connect/e220.h"
+#include "hardware/gpio.h"
+#include "hardware/uart.h"
 
-ds4_data setDeta(uint8_t const* report, uint16_t len){
-  (void)len;
-  const uint8_t dpad_str[] = {0b00000001,0b00000011,0b00000010,0b00000110,0b00000100,0b00001100,0b00001000,0b00001001,0b00000000};
-  uint8_t pad_deta_bit = 0b00000000;
-
-  ds4_data data{}; 
-  static sony_ds4_report_t privous_data = {};
-  static int counter_disconect = 0;
-
-  uint8_t const report_id = report[0];
-  report++;
-  len--;
-
-  if(report_id == 1){
-    sony_ds4_report_t ds4_report;
-    memcpy(&ds4_report, report, sizeof(ds4_report));
-    privous_data.counter = ds4_report.counter;
-
-    data.L_x = ds4_report.x;
-    data.L_y = ds4_report.y;
-    data.R_x = ds4_report.z;
-    data.R_y = ds4_report.rz;
-
-    data.L2 = ds4_report.l2_trigger;
-    data.R2 = ds4_report.r2_trigger;
-
-    if(ds4_report.triangle) pad_deta_bit |= 0b10000000;
-    if(ds4_report.circle)   pad_deta_bit |= 0b01000000;
-    if(ds4_report.cross)    pad_deta_bit |= 0b00100000;
-    if(ds4_report.square)   pad_deta_bit |= 0b00010000;
-    pad_deta_bit |= dpad_str[ds4_report.dpad];
-
-    data.key = pad_deta_bit;
-    pad_deta_bit = 0b00000000;
-
-    if(ds4_report.l1)     pad_deta_bit |= 0b10000000;
-    if(ds4_report.r1)     pad_deta_bit |= 0b01000000;
-    if(ds4_report.l3)     pad_deta_bit |= 0b00100000;
-    if(ds4_report.r3)     pad_deta_bit |= 0b00010000;
-    if(ds4_report.share)  pad_deta_bit |= 0b00001000;
-    if(ds4_report.option) pad_deta_bit |= 0b00000100;
-    if(ds4_report.ps)     pad_deta_bit |= 0b00000010;
-    if(ds4_report.tpad)   pad_deta_bit |= 0b00000001;
-    
-    data.boton = pad_deta_bit;
-
-    data.jyoutai |= 0b10000010;//固有設定
-
-    if(ds4_report.ps && ds4_report.share){
-      data.jyoutai |= 0b00000001;
-    }
-    
-    if(diff_report(&privous_data, &ds4_report)){
-      counter_disconect = 0;
-      privous_data = ds4_report;
-    }else{
-      counter_disconect = counter_disconect + 1;
-    }
-
-    if(counter_disconect <= 500){
-      data.jyoutai |= 0b00000100;
-    }else{
-      data.jyoutai |= 0b00000000;
-    }
-    
-  }else{
-    data.jyoutai |= 0b10000111;
-  }
-
-  int sum = 0;
-  sum = data.boton + data.jyoutai + data.key + data.L2 + data.L_x + data.L_y + data.R2 + data.R_x + data.R_y;
-  data.checsam = sum % 255;
-  data.checsam = data.checsam + 1;
-
-  return data;
-}
-
-bool changeData(int* output , ds4_data rewdata){
+ bool changeData(int* output , ds4_data rewdata){
   output[0] = int(rewdata.jyoutai);
   output[1] = int(rewdata.L_x);
   output[2] = int(rewdata.L_y);
@@ -92,11 +18,36 @@ bool changeData(int* output , ds4_data rewdata){
   return true;
  }
 
- bool set_LED(int* output,uint8_t red,uint8_t green,uint8_t bure ){
-  output[0] = 0b00001000;
-  output[1] = red;
-  output[2] = green;
-  output[3] = bure;
-  output[4] = (output[0] + output[1] + output[2] + output[3])%255;
-  return true;
+ //E220処理
+ E220 Lora_1(uart1, BAUD_UART_RATE, E220_1_M0PIN, E220_1_M1PIN, E220_1_AUXPIN);
+
+ void Lora1_init(void){
+  gpio_set_function(E220_1_UART_TXPIN, GPIO_FUNC_UART);
+  gpio_set_function(E220_1_UART_RXPIN, GPIO_FUNC_UART);
+  uart_init(uart1, BAUD_UART_RATE);
+
+  Lora_1.begin();
+  Lora_1.setDefaultResister(); //デフォルトのレジスタ値を設定します(デフォルトのレジスタ値はデータシートのデフォルトのレジスタ値を基にしています)。
+  Lora_1.setResister(uart_rate, UART_RATE115200);
+  Lora_1.setResister(air_rate,AIR_RATE62500);
+  Lora_1.setResister(addh, DEFAULT_ADDH); //E220モジュールのアドレスを設定します。引数:レジスタ名,値
+  Lora_1.setResister(addl, DEFAULT_ADDL); //E220モジュールのアドレスを設定します。
+  Lora_1.setResister(ch, DEFAULT_CH); //E220モジュールのチャンネルを設定します。
+  Lora_1.setResister(sub_packet,SUB_PACKET32);
+  Lora_1.sendResister(100);//E220モジュールにレジスタ値を送信します。引数:タイムアウト
+ }
+
+ bool Lora1_send_ds4(ds4_data input , int CH){
+  int deta_len[10];
+  bool check = false;
+
+  changeData(deta_len,input);
+  Lora_1.setDataWithCobs(deta_len,10);
+  check = Lora_1.sendDataFixed(TARGET_ADDH, TARGET_ADDL, CH,100);
+
+  return check;
+ }
+
+ bool Lora1_read_Aux(void){
+  return Lora_1.readAux();
  }

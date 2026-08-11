@@ -25,7 +25,11 @@
 
 #include "bsp/board_api.h"
 #include "tusb.h"
+#include "hid_app.h"
+#include "usb_driver.h"
+#include "type.h"
 #include "send_data.h"
+
 
 /* From https://www.kernel.org/doc/html/latest/input/gamepad.html
           ____________________________              __

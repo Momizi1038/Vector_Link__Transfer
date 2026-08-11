@@ -31,7 +31,8 @@
 #include "bluetooth_driver.h"
 #include "usb_driver.h"  // USB(TinyUSB)関連はここに隔離。tusb系ヘッダはここではincludeしない
 
-#include "hardware/uart.h"
+#include "lib/E220Connect/e220.h"
+#include "send_data.h"
 
 // -------------------------------------------------------
 // 設定
@@ -66,11 +67,13 @@ static ds4_data        controller_data;
 // Input_dAta の実体は usb_driver.c 側に移動した
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
+//static btstack_timer_source_t                 heartbeat;
 
 // -------------------------------------------------------
 // 前方宣言
 // -------------------------------------------------------
 static ds4_data make_romdom(void);
+//static void heartbeat_handler(struct btstack_timer_source *ts);
 
 // -------------------------------------------------------
 // ランダムデータ生成（テスト用）
@@ -220,6 +223,9 @@ int main(void) {
     gpio_set_dir(Yellow_D3,GPIO_OUT);
     gpio_put(Yellow_D3,true);
     
+    Lora1_init();
+
+
     if (cyw43_arch_init()) {
         printf("failed to initialise cyw43_arch\n");
         return -1;
@@ -330,6 +336,8 @@ int main(void) {
             #endif
 
             gpio_put(ConectLED_D1, true);
+        }else if(Lora1_read_Aux()){
+            if(Lora1_send_ds4(controller_data,TARGET_CH)) gpio_put(ConectLED_D1, true);
         }else{
             gpio_put(ConectLED_D1, false);
         }
