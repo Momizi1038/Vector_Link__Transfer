@@ -198,9 +198,10 @@ void core1_entry(){
         bool bt_ok = share_bt_connect;
         critical_section_exit(&cs_bt_connect);
 
-        //if (!bt_ok && Lora1_read_Aux()) {
-            // Lora1_send_ds4(d, TARGET_CH);
-        // }
+        if (!bt_ok && Lora1_read_Aux()) {
+            bool Lora_chack = Lora1_send_ds4(d,TARGET_CH); 
+            gpio_put(ConectLED_D1, Lora_chack);
+        }
     }
 }
 
@@ -336,8 +337,6 @@ int main(void) {
             #endif
 
             gpio_put(ConectLED_D1, true);
-        }else if(Lora1_read_Aux()){
-            if(Lora1_send_ds4(controller_data,TARGET_CH)) gpio_put(ConectLED_D1, true);
         }else{
             gpio_put(ConectLED_D1, false);
         }

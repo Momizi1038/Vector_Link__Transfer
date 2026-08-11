@@ -76,11 +76,13 @@ bool E220::sendDataFixed(const int _addh,const int _addl,const int _ch,const uin
   serialWrite(_addh );
   serialWrite(_addl );
   serialWrite(_ch );
+  printf("[Lora]");
   for(int i = 0; i < getSendSize(); i++){
     _flag = serialWrite(send_data[i]);
-    //printf("%d,",send_data[i]);
+    printf("%d,",send_data[i]);
     if(_flag == false)return false;
   }
+  printf("\n");
   clearData();
   return true;
 }

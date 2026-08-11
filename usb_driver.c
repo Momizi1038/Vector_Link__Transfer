@@ -94,7 +94,7 @@ ds4_data setDeta(uint8_t const* report, uint16_t len){
   int sum = 0;
   sum = data.boton + data.jyoutai + data.key + data.L2 + data.L_x + data.L_y + data.R2 + data.R_x + data.R_y;
   data.checsam = sum % 255;
-  data.checsam = data.checsam ;
+  data.checsam = data.checsam + 1;
 
   return data;
 }
