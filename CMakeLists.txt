@@ -73,6 +73,7 @@ target_link_libraries(Vector_Link_Transfer
     pico_btstack_cyw43
     pico_cyw43_arch_none
     hardware_adc
+    pico_multicore
     pico_rand
     pio_usb_host
     hardware_uart
