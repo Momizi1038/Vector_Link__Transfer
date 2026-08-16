@@ -35,6 +35,8 @@ ds4_data setDeta(uint8_t const* report, uint16_t len){
   report++;
   len--;
 
+  static uint16_t seq = 0;
+
   if(report_id == 1){
     sony_ds4_report_t ds4_report;
     memcpy(&ds4_report, report, sizeof(ds4_report));
@@ -86,13 +88,19 @@ ds4_data setDeta(uint8_t const* report, uint16_t len){
     }else{
       data.jyoutai |= 0b00000000;
     }
+
+    seq =+ 1;
+    data.seq_H = static_cast<uint8_t>(seq >> 8);
+    data.seq_L = static_cast<uint8_t>(seq & 0xFF);
     
   }else{
     data.jyoutai |= 0b10000111;
   }
 
   int sum = 0;
-  sum = data.boton + data.jyoutai + data.key + data.L2 + data.L_x + data.L_y + data.R2 + data.R_x + data.R_y;
+  sum = data.boton + data.jyoutai + data.key + data.L2 
+  + data.L_x + data.L_y + data.R2 + data.R_x + data.R_y
+  + data.seq_H +  data.seq_L;
   data.checsam = sum % 255;
   data.checsam = data.checsam + 1;
 
