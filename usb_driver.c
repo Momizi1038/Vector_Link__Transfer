@@ -89,9 +89,9 @@ ds4_data setDeta(uint8_t const* report, uint16_t len){
       data.jyoutai |= 0b00000000;
     }
 
-    seq =+ 1;
-    data.seq_H = static_cast<uint8_t>(seq >> 8);
-    data.seq_L = static_cast<uint8_t>(seq & 0xFF);
+    seq += 1;
+    data.seq_H = (uint8_t)(seq >> 8);
+    data.seq_L = (uint8_t)(seq & 0xFF);
     
   }else{
     data.jyoutai |= 0b10000111;

@@ -16,7 +16,7 @@
   output[8] = int(rewdata.boton);
   output[9] = int(rewdata.seq_H);
   output[10]= int(rewdata.seq_L);
-  output[9] = int(rewdata.checsam);
+  output[11]= int(rewdata.checsam);
   return true;
  }
 

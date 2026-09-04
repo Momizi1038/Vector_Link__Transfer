@@ -155,7 +155,7 @@ bool E220::setDataWithCobs(const int *_pData,const int _size){
   return true;
 }
 
-bool E220::setData(const int *_pData,const int _size){
+bool E220::setData(const int *_pData,const int _size){ 
   int _send_size = getSendSize();
   bool _flag = addSendSize(_size);
   if(_flag == false)return false;

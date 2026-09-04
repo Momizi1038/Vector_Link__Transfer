@@ -70,12 +70,6 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
 //static btstack_timer_source_t                 heartbeat;
 
 // -------------------------------------------------------
-// 前方宣言
-// -------------------------------------------------------
-static ds4_data make_romdom(void);
-//static void heartbeat_handler(struct btstack_timer_source *ts);
-
-// -------------------------------------------------------
 // ランダムデータ生成（テスト用）
 // -------------------------------------------------------
 static ds4_data make_romdom(void) {
@@ -194,13 +188,18 @@ void core1_entry(){
         share_ctrl_data = d;
         critical_section_exit(&cs_ctrl_data);
 
-        critical_section_enter_blocking(&cs_bt_connect);
-        bool bt_ok = share_bt_connect;
-        critical_section_exit(&cs_bt_connect);
+        // critical_section_enter_blocking(&cs_bt_connect);
+        // bool bt_ok = share_bt_connect;
+        // critical_section_exit(&cs_bt_connect);
 
         if (Lora1_read_Aux()) {
             bool Lora_chack = Lora1_send_ds4(d,TARGET_CH); 
             gpio_put(ConectLED_D1, Lora_chack);
+            #if DEBUG_TX_LOG
+                uint16_t packet_seq = (static_cast<uint16_t>
+                    (d.seq_H) << 8) | d.seq_L;
+                printf("[SEQ]%d\n",packet_seq);
+            #endif
         }
     }
 }
@@ -334,6 +333,9 @@ int main(void) {
             //     controller_data.R_x, controller_data.R_y,
             //     controller_data.L2, controller_data.R2,
             //     controller_data.key, controller_data.boton);
+                uint16_t packet_seq = (static_cast<uint16_t>
+                    (controller_data.seq_H) << 8) | controller_data.seq_L;
+                printf("[SEQ]%5d\n",packet_seq);
             #endif
 
             gpio_put(ConectLED_D1, true);
