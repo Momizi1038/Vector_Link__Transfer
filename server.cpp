@@ -215,13 +215,13 @@ int main(void) {
 
     multicore_launch_core1(core1_entry);
 
-    gpio_init(ConectLED_D1);
-    gpio_init(BlueLED_D2);
-    gpio_init(Yellow_D3);
-    gpio_set_dir(ConectLED_D1,GPIO_OUT);
-    gpio_set_dir(BlueLED_D2,GPIO_OUT);
-    gpio_set_dir(Yellow_D3,GPIO_OUT);
-    gpio_put(Yellow_D3,true);
+    // gpio_init(ConectLED_D1);
+    // gpio_init(BlueLED_D2);
+    // gpio_init(Yellow_D3);
+    // gpio_set_dir(ConectLED_D1,GPIO_OUT);
+    // gpio_set_dir(BlueLED_D2,GPIO_OUT);
+    // gpio_set_dir(Yellow_D3,GPIO_OUT);
+    // gpio_put(Yellow_D3,true);
     
     Lora1_init();
 
@@ -297,56 +297,53 @@ int main(void) {
     
 
     while(true){
-        bool connected_bt = bluetooth_can_send() && bluetooth_is_connected();
+          /*
+        * Bluetooth接続状態を共有
+        */
+        bool connected_bt = bluetooth_is_connected();
+        uint16_t last_sent_seq = 0;
+
         critical_section_enter_blocking(&cs_bt_connect);
         share_bt_connect = connected_bt;
         critical_section_exit(&cs_bt_connect);
 
-        if(bluetooth_is_connected()){
-            #if DEBUG_TX_LOG
-            // printf("[GET] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%3d\n",
-                // controller_data.L_x, controller_data.L_y,
-                // controller_data.R_x, controller_data.R_y,
-                // controller_data.L2, controller_data.R2,
-                // controller_data.key, controller_data.boton, 
-                // controller_data.jyoutai, controller_data.checsam);
-            // printf("[GET]Lx:%3d,Rx:%3d,ste:%3d\n",controller_data.L_y,controller_data.R_x,controller_data.jyoutai);
-
-            #endif
-        }
-        
-        //送信
-        nowTime = get_absolute_time();
+        //Bluetooth接続中    
         if(connected_bt){
-            if(absolute_time_diff_us(next_send_bt, nowTime) >= 0){
-                critical_section_enter_blocking(&cs_ctrl_data);
-                controller_data = share_ctrl_data;
-                critical_section_exit(&cs_ctrl_data);
-                //controller_data = make_romdom();
-                int err = bluetooth_send((uint8_t *)&controller_data,sizeof(ds4_data));
-                next_send_bt = delayed_by_ms(nowTime,15);//第2引数が送信間隔
-                printf("connect BT,ERR:%d\n",err);
-            }
-            #if DEBUG_TX_LOG
-            // printf("[TX] %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
-            //     controller_data.L_x, controller_data.L_y,
-            //     controller_data.R_x, controller_data.R_y,
-            //     controller_data.L2, controller_data.R2,
-            //     controller_data.key, controller_data.boton);
-                uint16_t packet_seq = (static_cast<uint16_t>
-                    (controller_data.seq_H) << 8) | controller_data.seq_L;
-                printf("[SEQ]%5d\n",packet_seq);
-            #endif
+            //Core1から最新データを取得
+            critical_section_enter_blocking(&cs_ctrl_data);
+            controller_data = share_ctrl_data;
+            critical_section_exit(&cs_ctrl_data);
+
+            //SEQを確認 新しいController Dataが更新された場合のみ Bluetooth側へ渡す。       
+            uint16_t now_seq = (static_cast<uint16_t>(controller_data.seq_H) << 8) | controller_data.seq_L;
+
+            if(now_seq != last_sent_seq){
+                // 最新データをBluetoothドライバへ渡すだけ。
+                int err = bluetooth_update_data((uint8_t *)&controller_data,sizeof(ds4_data));
+                if(err == 0){
+                    last_sent_seq = now_seq;
+                }
+
+                #if DEBUG_TX_LOG
+                    printf("[BT UPDATE] SEQ=%u ERR=%d\n", now_seq, err);
+                #endif
+            }   
 
             gpio_put(ConectLED_D1, true);
-        }else{
-            gpio_put(ConectLED_D1, false);
-        }
 
+        }else{
+
+            gpio_put(ConectLED_D1, false);
+
+        /*
+         * 再接続時にSEQ比較で送信されなくなることを防ぐ。
+         */
+            last_sent_seq = 0;
+        }
         // LED 点滅
-        // static bool led_on = true;
-        // led_on = !led_on;
-        //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
+        static bool led_on = true;
+        led_on = !led_on;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_on);
     }
     return 0;
 }
